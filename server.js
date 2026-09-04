@@ -119,7 +119,9 @@ const PAGE_STYLE = `
   .wrap{max-width:820px;width:100%;}
   input{font-family:'Zilla Slab',serif;padding:.5rem;border-radius:4px;border:1px solid #cf9a5c;background:#1a1109;color:#f3e6c9;}
 
-  .overlay{position:fixed;inset:0;background:rgba(15,8,4,.75);display:flex;align-items:center;justify-content:center;z-index:50;padding:1rem;}
+  .overlay{position:fixed;inset:0;background:rgba(15,8,4,.75);align-items:center;justify-content:center;z-index:50;padding:1rem;}
+  .overlay[hidden]{display:none;}
+  .overlay:not([hidden]){display:flex;}
   .pinbox{background:#3b2415;border:4px solid #cf9a5c;border-radius:10px;padding:1.6rem 1.4rem;width:100%;max-width:340px;text-align:center;}
   .pinbox h2{font-family:'Sancreek',serif;font-weight:400;margin:0 0 .2rem;font-size:1.4rem;color:#f3e6c9;}
   .pinSub{color:#cf9a5c;font-size:.8rem;margin:0 0 1rem;}
