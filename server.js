@@ -135,6 +135,8 @@ const PAGE_STYLE = `
   .pinActions #cancelBtn{background:#5a2116;}
   .pinActions #skipBtn{background:#6b4226;}
   .pinErr{color:#e07a5f;font-size:.78rem;min-height:1.2em;}
+  .forgotLink{display:none;margin:.2rem 0 0;color:#cf9a5c;font-size:.75rem;text-decoration:underline;background:none;border:none;cursor:pointer;font-family:'Zilla Slab',serif;}
+  .forgotLink.show{display:inline-block;}
 `;
 
 function boardPage(statusByEmp) {
@@ -174,6 +176,7 @@ function boardPage(statusByEmp) {
           <button id="enterBtn" type="button">Enter</button>
         </div>
         <p class="pinErr" id="pinErr">&nbsp;</p>
+        <button class="forgotLink" id="forgotLink" type="button">Forgot PIN?</button>
       </div>
     </div>
 
@@ -187,6 +190,7 @@ function boardPage(statusByEmp) {
       const pinErr = document.getElementById('pinErr');
       const skipBtn = document.getElementById('skipBtn');
       const dotKey = document.getElementById('dotKey');
+      const forgotLink = document.getElementById('forgotLink');
 
       function renderBuffer() {
         if (!state) return;
@@ -195,18 +199,20 @@ function boardPage(statusByEmp) {
           dotsEl.textContent = state.buffer ? ('$' + state.buffer) : '$0';
         } else {
           dotsEl.classList.remove('drawerDisplay');
-          dotsEl.textContent = state.buffer.split('').map(() => '●').join(' ') || ' ';
+          dotsEl.textContent = state.buffer.split('').map(() => '●').join(' ') || ' ';
         }
       }
 
       function openPin(employeeId, stage) {
         state = { employeeId, stage, buffer: '', newPin: '', verifiedPin: null };
-        pinErr.textContent = ' ';
+        pinErr.textContent = ' ';
         skipBtn.hidden = true;
         dotKey.style.visibility = 'hidden';
+        forgotLink.classList.remove('show');
         if (stage === 'verify') {
           pinTitle.textContent = EMP_NAMES[employeeId];
           pinSub.textContent = 'Enter your PIN';
+          forgotLink.classList.add('show');
         }
         renderBuffer();
         overlay.hidden = false;
@@ -238,6 +244,27 @@ function boardPage(statusByEmp) {
         submitClock(state.employeeId, state.verifiedPin, null);
       });
 
+      forgotLink.addEventListener('click', async () => {
+        if (!state) return;
+        const employeeId = state.employeeId;
+        forgotLink.classList.remove('show');
+        pinErr.textContent = 'Resetting…';
+        try {
+          const res = await fetch('/api/reset-pin', {
+            method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ employeeId })
+          });
+          const data = await res.json();
+          if (!res.ok) { pinErr.textContent = data.message || 'Could not reset.'; forgotLink.classList.add('show'); return; }
+          state.buffer = '';
+          pinErr.textContent = 'PIN reset — enter 1111 now.';
+          renderBuffer();
+        } catch (err) {
+          pinErr.textContent = 'Could not reset. Try again.';
+          forgotLink.classList.add('show');
+        }
+      });
+
       document.getElementById('enterBtn').addEventListener('click', async () => {
         if (!state) return;
         if (state.stage === 'verify') {
@@ -251,7 +278,7 @@ function boardPage(statusByEmp) {
           state.stage = 'confirmpin';
           pinTitle.textContent = 'Confirm your PIN';
           pinSub.textContent = 'Enter it again';
-          pinErr.textContent = ' ';
+          pinErr.textContent = ' ';
           renderBuffer();
         } else if (state.stage === 'confirmpin') {
           if (state.buffer !== state.newPin) {
@@ -292,9 +319,10 @@ function boardPage(statusByEmp) {
         if (res.status === 409 && data.needsSetup) {
           state.stage = 'newpin';
           state.buffer = '';
+          forgotLink.classList.remove('show');
           pinTitle.textContent = 'Set your PIN';
           pinSub.textContent = 'Choose a PIN (4+ digits), not 1111';
-          pinErr.textContent = ' ';
+          pinErr.textContent = ' ';
           renderBuffer();
           return;
         }
@@ -302,11 +330,12 @@ function boardPage(statusByEmp) {
           state.stage = 'drawer';
           state.verifiedPin = pin;
           state.buffer = '';
+          forgotLink.classList.remove('show');
           pinTitle.textContent = EMP_NAMES[employeeId];
           pinSub.textContent = 'Drawer total ($) - optional';
           skipBtn.hidden = false;
           dotKey.style.visibility = 'visible';
-          pinErr.textContent = ' ';
+          pinErr.textContent = ' ';
           renderBuffer();
           return;
         }
@@ -405,6 +434,20 @@ app.post('/api/set-pin', async (req, res) => {
   const when = new Date().toLocaleString('en-US', { timeZone: TZ });
   sendMail(`Shift Board: ${emp.name} set a new PIN`, `${emp.name} set a new personal PIN at ${when}.`);
   res.json({ ok: true });
+});
+
+app.post('/api/reset-pin', async (req, res) => {
+  const { employeeId } = req.body || {};
+  const empRes = await pool.query(`SELECT * FROM employees WHERE id=$1;`, [employeeId]);
+  const emp = empRes.rows[0];
+  if (!emp) return res.status(404).json({ message: 'Unknown employee.' });
+  await pool.query(`UPDATE employees SET pin='1111', pin_is_temp=true WHERE id=$1;`, [employeeId]);
+  const when = new Date().toLocaleString('en-US', { timeZone: TZ });
+  await sendMail(
+    `Shift Board: ${emp.name} reset their PIN`,
+    `${emp.name} requested a PIN reset at ${when}. Their PIN is back to 1111 — they'll be prompted to set a new one on their next clock-in.`
+  );
+  res.json({ ok: true, message: 'PIN reset. Enter 1111 to set a new one.' });
 });
 
 app.get('/api/daily-summary', async (req, res) => {
